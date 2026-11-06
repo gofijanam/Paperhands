@@ -1,4 +1,5 @@
 import {rankPaperTraders} from '../paper-ranking';
+import {publicRequestOrigin,matchesRequestOrigin} from './request-origin';
 import { env } from '@/lib/server/runtime';
 import { applyOrder,quoteOrder,newLedger,cycleAt,DAY,LAMPORTS,BANKROLL,rewardShares,type Ledger,type Order } from '../paper-engine';
 import { marketCoin,validMint,upstream } from './market';
@@ -75,10 +76,11 @@ export async function handlePaper(req:Request,action:string){
  if(read&&action==='config')return configuration();
  if(read&&action==='leaderboard')return publicBoard();
  if(read&&action==='health'){await db().prepare('SELECT 1').first();return {status:'ok',storage:'SQLite persistent volume',market:'real',...configuration()};}
- if(!read){const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin)throw Object.assign(new Error('Invalid request origin'),{status:403});await limit(req,action,['practice','nonce','verify'].includes(action)?15:60);}
+ const publicOrigin=publicRequestOrigin(req.url,cfg('NEXT_PUBLIC_SITE_URL'));
+ if(!read){if(!matchesRequestOrigin(req.headers.get('origin'),req.url,publicOrigin))throw Object.assign(new Error('Invalid request origin'),{status:403});await limit(req,action,['practice','nonce','verify'].includes(action)?15:60);}
  if(action==='practice'&&!read){const s=await newSession('practice:'+crypto.randomUUID(),null);return {...s,...await snapshot({user:(await session(new Request(req.url,{headers:{authorization:`Bearer ${s.token}`}}))).user,wallet:null})};}
- if(action==='nonce'&&!read){const b:any=await req.json();if(!validMint(b.wallet)||base58(b.wallet).length!==32)throw new Error('Invalid wallet');const id=crypto.randomUUID(),issued=Date.now(),host=new URL(req.url).host;
- const message=`${host} wants you to sign in with your Solana account:\n${b.wallet}\n\nSign in to Paperhands. This does not authorize a transaction.\n\nURI: ${new URL(req.url).origin}\nVersion: 1\nChain ID: solana:mainnet\nNonce: ${id}\nIssued At: ${new Date(issued).toISOString()}\nExpiration Time: ${new Date(issued+300000).toISOString()}`;
+ if(action==='nonce'&&!read){const b:any=await req.json();if(!validMint(b.wallet)||base58(b.wallet).length!==32)throw new Error('Invalid wallet');const id=crypto.randomUUID(),issued=Date.now(),host=new URL(publicOrigin).host;
+ const message=`${host} wants you to sign in with your Solana account:\n${b.wallet}\n\nSign in to Paperhands. This does not authorize a transaction.\n\nURI: ${publicOrigin}\nVersion: 1\nChain ID: solana:mainnet\nNonce: ${id}\nIssued At: ${new Date(issued).toISOString()}\nExpiration Time: ${new Date(issued+300000).toISOString()}`;
  await db().prepare('INSERT INTO paper_nonces(id,wallet,message,expires,used) VALUES(?,?,?,?,0)').bind(id,b.wallet,message,issued+300000).run();return {id,message};}
  if(action==='verify'&&!read){const b:any=await req.json();if(typeof b.id!=='string'||typeof b.signature!=='string'||b.signature.length>200)throw new Error('Invalid signature');
  const n=await db().prepare('SELECT * FROM paper_nonces WHERE id=? AND used=0 AND expires>?').bind(b.id,Date.now()).first<any>();if(!n)throw new Error('Sign-in request expired. Try again.');
