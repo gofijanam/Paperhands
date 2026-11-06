@@ -1,4 +1,4 @@
-import {tokenPaperTraders} from '@/lib/server/paper';
+import {tokenPaperTraders,session} from '@/lib/server/paper';
 import {rpcHolders} from '@/lib/server/helius';
 import {env} from '@/lib/server/runtime';
 import {gmgnHolders} from '@/lib/server/gmgn';
@@ -11,9 +11,10 @@ export async function GET(req:Request){
  else if(action==='feed') {const col=u.searchParams.get('column'); if(!['trending','new','graduating'].includes(col||''))return Response.json({error:'Invalid feed'},{status:400}); data=await marketFeed(col as any);}
  else if(action==='search')data=await marketSearch(u.searchParams.get('q')||'').catch(()=>dexFallback(u.searchParams.get('q')||''));
  else if(action==='sol-price')data=await solPrice();
+ else if(action==='top-traders'){if(!validMint(mint))return Response.json({error:'Invalid mint'},{status:400});const viewer=req.headers.has('authorization')?await session(req):undefined;data=await tokenPaperTraders(mint,viewer);}
  else if(action==='metadata')data=await marketMetadata((u.searchParams.get('mints')||'').split(',').filter(validMint).slice(0,30));
  else if(action==='ticks'){const ms=(u.searchParams.get('mints')||'').split(',').filter(validMint).slice(0,30);data=await marketTicks(ms);}
- else {if(!validMint(mint))return Response.json({error:'Invalid mint'},{status:400}); if(action==='analytics')data=await marketAnalytics(mint);else if(action==='coin')data=await marketCoin(mint);else if(action==='candles')data=await marketCandles(mint,(u.searchParams.get('tf')||'5m') as any);else if(action==='trades')data=await marketTrades(mint);else if(action==='holders')data=await gmgnHolders(mint).catch(()=>rpcHolders(mint));else if(action==='top-traders')data=await tokenPaperTraders(mint);else return Response.json({error:'Unknown action'},{status:404});}
+ else {if(!validMint(mint))return Response.json({error:'Invalid mint'},{status:400}); if(action==='analytics')data=await marketAnalytics(mint);else if(action==='coin')data=await marketCoin(mint);else if(action==='candles')data=await marketCandles(mint,(u.searchParams.get('tf')||'5m') as any);else if(action==='trades')data=await marketTrades(mint);else if(action==='holders')data=await gmgnHolders(mint).catch(()=>rpcHolders(mint));else return Response.json({error:'Unknown action'},{status:404});}
  return Response.json({data,asOf:Date.now(),source:'public-market'},{headers:{'Cache-Control':'no-store'}});
- }catch(e){return Response.json({error:e instanceof Error?e.message:'Market temporarily unavailable',data:null},{status:503,headers:{'Cache-Control':'no-store'}});}
+ }catch(e){return Response.json({error:e instanceof Error?e.message:'Market temporarily unavailable',data:null},{status:(e as any)?.status??503,headers:{'Cache-Control':'no-store'}});}
 }

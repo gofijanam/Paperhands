@@ -1,6 +1,4 @@
 "use client";
-import { RANKED } from "@/lib/constants";
-import { ApiStatus } from "./ApiStatus";
 import { useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
@@ -28,10 +26,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[80] focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-accent-ink">Skip to content</a>
       <Sidebar collapsed={collapsed} onToggle={toggle} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b border-line bg-panel-2 px-3 py-1.5 text-center text-[12px] text-muted" role="note">
-          <span className="font-medium text-accent">Real Solana markets</span> · Virtual funds only · Holder competition opens after token launch
-
-        </div>
         <TopBar onSearch={() => setPalette(true)} />
         <Ticker />
         <main id="main" className="min-w-0 flex-1 pb-20 md:pb-0">{children}</main>

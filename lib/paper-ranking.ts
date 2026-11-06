@@ -1,4 +1,4 @@
-export type PaperTrader={wallet:string;realizedSol:number;volumeSol:number;buys:number;sells:number;trades:number};
+export type PaperTrader={wallet:string;realizedSol:number;volumeSol:number;buys:number;sells:number;trades:number;isYou?:boolean};
 export function rankPaperTraders(rows:{wallet:string;data:string}[],mint:string):PaperTrader[]{
  const users=new Map<string,PaperTrader>();
  for(const row of rows){let f:any;try{f=JSON.parse(row.data);}catch{continue;}

@@ -75,7 +75,7 @@ export interface PaperApi {
   candles(mint: string, tf: TTimeframe): Promise<TCandle[]>;
   trades(mint: string): Promise<TTape>;
   holders(mint: string): Promise<THolder[]>;
-  topTraders?(mint:string):Promise<PaperTrader[]>;
+  topTraders?(mint:string,token?:string|null):Promise<PaperTrader[]>;
   leaderboard(): Promise<TLeaderboard>;
   search(q: string): Promise<TCoin[]>;
   gate(wallet: string): Promise<TGateStatus>;

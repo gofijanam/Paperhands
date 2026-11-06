@@ -174,3 +174,14 @@ button:disabled {cursor:not-allowed;}
 .portfolio-table td{text-align:right;padding:14px 16px;border-top:1px solid #242429}.portfolio-table th:first-child,.portfolio-table td:first-child{text-align:left}.portfolio-table tr:hover td{background:#ffffff03}
 @media(max-width:900px){.portfolio-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.portfolio-stat{padding:16px}.portfolio-stat:nth-child(2){border-right:0}.portfolio-stat:nth-child(-n+2){border-bottom:1px solid #242429}.performance-canvas{height:280px}}
 @media(max-width:480px){.portfolio-stat-value{font-size:19px}.performance-heading,.performance-toolbar{padding-left:14px;padding-right:14px}.performance-toolbar{gap:14px}.segmented button{min-height:38px}.performance-canvas{height:250px}.performance-expanded{inset:8px}.performance-value strong{font-size:22px}}
+
+/* The original 2 / 1 / 3 podium remains visible before the first entrant. */
+.leaderboard-podium {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:12px;padding-top:12px;}
+.podium-place {display:flex;flex-direction:column;align-items:center;min-width:0;min-height:225px;padding:20px 12px;text-align:center;}
+.podium-place-1 {min-height:265px;border-color:var(--color-accent);}
+.podium-place-3 {min-height:205px;}
+.podium-rank {display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px;font-size:36px;font-weight:600;line-height:1;color:var(--color-text);}
+.podium-place-1 .podium-rank {color:var(--color-accent);}
+.podium-open-avatar {display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--color-panel-3);color:var(--color-muted);}
+.podium-place-1 .podium-open-avatar {width:54px;height:54px;}
+@media(max-width:520px){.leaderboard-podium{gap:8px}.podium-place{min-height:195px;padding:16px 8px}.podium-place-1{min-height:230px}.podium-place-3{min-height:180px}.podium-rank{font-size:30px;gap:6px}}

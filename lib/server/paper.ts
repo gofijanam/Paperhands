@@ -74,9 +74,11 @@ export async function publicBoard(){
  const c=await db().prepare('SELECT pool_lamports FROM paper_cycles WHERE id=?').bind(cycle).first<any>();
  return {cycle:{id:cycle,startsAt:cycle*DAY,endsAt:(cycle+1)*DAY,poolSol:c?.pool_lamports?c.pool_lamports/LAMPORTS:null,rankedCount:rows.length,bankrollSol:10,status:configuration().ranked?'active':'preview'},rows:rows.map((r,i)=>({...r,rank:i+1})),payouts:[],payoutsMock:false,mock:false,poolDemo:false};
 }
-export async function tokenPaperTraders(mint:string){
- const rows=await db().prepare("SELECT a.wallet,f.data FROM paper_fills f JOIN paper_accounts a ON a.id=f.account WHERE a.cycle=? AND a.wallet IS NOT NULL AND json_extract(f.data,'$.mint')=?").bind(cycleAt(),mint).all<{wallet:string;data:string}>();
- return rankPaperTraders(rows.results,mint);
+export async function tokenPaperTraders(mint:string,viewer?:{user:string;wallet:string|null}){
+ // Public wallet ranks plus the signed-in viewer's own practice fills only.
+ // Never expose other practice accounts or change competition/reward eligibility.
+ const rows=await db().prepare("SELECT COALESCE(a.wallet,'you') AS wallet,f.data FROM paper_fills f JOIN paper_accounts a ON a.id=f.account WHERE a.cycle=? AND (a.wallet IS NOT NULL OR a.user=?) AND json_extract(f.data,'$.mint')=?").bind(cycleAt(),viewer?.user??'',mint).all<{wallet:string;data:string}>();
+ return rankPaperTraders(rows.results,mint).map(t=>({...t,isYou:!!viewer&&t.wallet===(viewer.wallet??'you')}));
 }
 export async function handlePaper(req:Request,action:string){
  const read=req.method==='GET';

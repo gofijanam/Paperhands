@@ -25,23 +25,23 @@ const TABS = ["Trades", "Active wallets", "Holders", "Top traders", "Pools", "My
 
 export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff = false }: { initial: TCoin; trades: TTrade[]; holders: THolder[]; source: "api" | "mock"; tapeSource: TTape["source"]; tapeOff?: boolean }) {
   const api = useMemo(() => getApi(), []);
+  const p = usePaper();
   const { coin: c } = useLiveCoin(initial, api);
   const tape = useTradeTape(c.mint, trades, 60, api);
   const marketDetails=useMarketDetails(c.mint);
   const activeWallets=useMemo(()=>recentWalletActivity(tape),[tape]);
   const [streamState,setStreamState]=useState('connecting');
   useEffect(()=>subscribeMarket(c.mint,{status:s=>setStreamState(s.state)}),[c.mint]);
-  const tapeLabel = streamState==='connected'?'Helius live':streamState==='connecting'?'Connecting':streamState==='reconnecting'?'Reconnecting':'Snapshots';
+  const tapeLabel = streamState==='connected'?'Live':streamState==='connecting'?'Connecting':streamState==='reconnecting'?'Reconnecting':'Recent';
   const [holderRows,setHolderRows]=useState(holders);
   const [traders,setTraders]=useState<PaperTrader[]>([]);
   const [detailError,setDetailError]=useState('');
   const [detailBusy,setDetailBusy]=useState(false),[detailRetry,setDetailRetry]=useState(0);
   const [tab, setTab] = useState<(typeof TABS)[number]>("Trades");
   useEffect(()=>{if(tab!=='Holders'&&tab!=='Top traders')return;let active=true,busy=false;
-    const load=async()=>{if(busy||document.hidden)return;busy=true;setDetailBusy(true);setDetailError('');try{if(tab==='Holders'){const rows=await api.holders(c.mint);if(active)setHolderRows(rows);}else{const rows=await api.topTraders!(c.mint);if(active)setTraders(rows);}if(active)setDetailError('');}catch(e:any){if(active)setDetailError(e.message);}finally{busy=false;if(active)setDetailBusy(false);}};
-    void load();const id=setInterval(load,30000);return()=>{active=false;clearInterval(id);};},[tab,c.mint,api,detailRetry]);
+    const load=async()=>{if(busy||document.hidden)return;busy=true;setDetailBusy(true);setDetailError('');try{if(tab==='Holders'){const rows=await api.holders(c.mint);if(active)setHolderRows(rows);}else{const rows=await api.topTraders!(c.mint,p.token);if(active)setTraders(rows);}if(active)setDetailError('');}catch(e:any){if(active)setDetailError(e.message);}finally{busy=false;if(active)setDetailBusy(false);}};
+    void load();const id=setInterval(load,30000);return()=>{active=false;clearInterval(id);};},[tab,c.mint,api,detailRetry,p.token,p.fills[0]?.id,p.accountId]);
   const [copied, setCopied] = useState(false);
-  const p = usePaper();
   const [wide, setWide] = useState<boolean | null>(null);
   const [sheet, setSheet] = useState<"buy" | "sell" | null>(null);
   useEffect(() => { const m = matchMedia("(min-width: 1024px)"); const f = () => setWide(m.matches); f(); m.addEventListener("change", f); return () => m.removeEventListener("change", f); }, []);
@@ -96,7 +96,6 @@ export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff
               <RangeBar api={api} mint={c.mint} live={c.priceUsd} />
             </div>
           </div>
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-muted"><span className={`status-light ${streamState==='connected'?'':'offline'}`}/>{streamState==='connected'?'Helius · confirmed trade events':streamState==='connecting'?'Connecting to on-chain feed…':streamState==='reconnecting'?'Reconnecting · market snapshots remain active':'Market snapshots · live connection paused'}<span className="ml-auto">Paper execution</span></div>
           <dl className="num mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line pt-3 sm:grid-cols-4">
             <Stat k={c.marketCapEstimated?"FDV (cap unavailable)":"Market cap"}><Flash value={c.mcapUsd} className="px-0.5"><Odometer text={usd(c.mcapUsd)} /></Flash></Stat>
             <Stat k="24h volume">{usd(c.vol24hUsd)}</Stat>
@@ -137,17 +136,17 @@ export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff
               <table className="num w-full text-[12px]"><thead className="text-left text-muted"><tr><th className="px-3 py-2 font-normal">Wallet</th><th className="text-right font-normal">Bought SOL</th><th className="text-right font-normal">Sold SOL</th><th className="px-3 text-right font-normal">Buys / Sells</th></tr></thead><tbody>{!activeWallets.length&&<tr><td colSpan={4} className="p-5 text-muted">Waiting for verified wallet addresses in the trade feed.</td></tr>}{activeWallets.map(w=><tr key={w.wallet} className="row border-t border-line/60"><td className="px-3 py-2"><a className="text-soft hover:text-accent" href={`https://solscan.io/account/${w.wallet}`} target="_blank" rel="noreferrer">{short(w.wallet)}</a></td><td className="text-right text-up">{sol(w.boughtSol,3)}</td><td className="text-right text-down">{sol(w.soldSol,3)}</td><td className="px-3 text-right">{w.buys} / {w.sells}</td></tr>)}</tbody></table>
             </>}
             {tab === "Holders" && (
-              <table className="num w-full text-[12px]"><caption className="px-3 py-2 text-left text-[11px] text-muted">{holderRows.some(h=>h.label?.startsWith('RPC'))?'Largest 20 token accounts grouped by owner · Solana RPC · partial distribution':holderRows.length?'Holder distribution · GMGN':'Holder distribution · on-chain accounts'}</caption><thead className="sticky top-0 bg-panel text-left text-muted"><tr><th className="px-3 py-2 font-normal">#</th><th className="font-normal">Account</th><th className="text-right font-normal">Amount</th><th className="px-3 text-right font-normal">Share</th></tr></thead>
+              <table className="num w-full text-[12px]"><caption className="px-3 py-2 text-left text-[11px] text-muted">{holderRows.some(h=>h.label?.startsWith('RPC'))?'Largest 20 token accounts · partial distribution':holderRows.length?'Holder distribution':'Holder distribution'}</caption><thead className="sticky top-0 bg-panel text-left text-muted"><tr><th className="px-3 py-2 font-normal">#</th><th className="font-normal">Account</th><th className="text-right font-normal">Amount</th><th className="px-3 text-right font-normal">Share</th></tr></thead>
                 <tbody>{!holderRows.length&&<tr><td colSpan={4} className="p-6 text-muted">{detailBusy?'Loading verified holders…':detailError||'No verified holder distribution is available for this token yet.'} <button className="text-accent underline mr-2" onClick={()=>setDetailRetry(x=>x+1)} disabled={detailBusy}>Retry</button><a href={`https://solscan.io/token/${c.mint}#holders`} target="_blank" rel="noreferrer" className="text-accent">View on Solscan</a></td></tr>}{holderRows.map((h, i) => (
                   <tr key={h.owner} className="row border-t border-line/60"><td className="px-3 py-2 text-muted">{i + 1}</td><td className="text-soft"><a href={`https://solscan.io/account/${h.owner}`} target="_blank" rel="noreferrer" className="hover:text-accent">{short(h.owner)}</a>{h.label && <span className="ml-2 rounded bg-panel-3 px-1 text-[11px] text-muted">{h.label}</span>}</td><td className="text-right text-soft">{compact(h.tokens)}</td>
                     <td className="px-3 text-right"><span className="inline-flex items-center gap-2"><span className="bar hidden w-16 sm:block"><i style={{ width: `${Math.min(100, h.pct * 3)}%` }} /></span>{h.pct.toFixed(2)}%</span></td></tr>
                 ))}</tbody></table>
             )}
             {tab === "Top traders" && <>
-              <p className="px-3 py-2 text-[12px] text-muted">Paperhands traders · this token · today (UTC) · ranked by realized paper PnL. Verified wallet accounts only; practice sessions are excluded.</p>
+              <p className="px-3 py-2 text-[12px] text-muted">This token · today (UTC) · ranked by realized PnL</p>
               <table className="num w-full text-[12px]"><thead className="sticky top-0 bg-panel text-left text-muted"><tr><th className="px-3 py-2 font-normal">Trader</th><th className="text-right font-normal">Realized PnL</th><th className="text-right font-normal">Volume</th><th className="px-3 text-right font-normal">Buys / Sells</th></tr></thead><tbody>
-              {!traders.length&&<tr><td colSpan={4} className="p-6 text-muted">{detailBusy?'Loading Paperhands traders…':detailError?'Paper rankings are temporarily unavailable.':'No Paperhands traders for this token yet. Rankings appear after verified users paper trade.'}</td></tr>}
-              {traders.map(t=><tr key={t.wallet} className="row border-t border-line/60"><td className="px-3 py-2 text-soft">{short(t.wallet)}</td><td className={`text-right ${t.realizedSol>=0?'text-up':'text-down'}`}>{sol(t.realizedSol,4)}</td><td className="text-right">{sol(t.volumeSol,3)}</td><td className="px-3 text-right"><span className="text-up">{t.buys}</span> / <span className="text-down">{t.sells}</span></td></tr>)}
+              {!traders.length&&<tr><td colSpan={4} className="p-6 text-muted">{detailBusy?'Loading Paperhands traders…':detailError?'Paper rankings are temporarily unavailable.':'No trades in this token yet.'}</td></tr>}
+              {traders.map(t=><tr key={t.wallet} className="row border-t border-line/60"><td className="px-3 py-2 text-soft">{t.isYou?<span className="text-accent">You</span>:short(t.wallet)}</td><td className={`text-right ${t.realizedSol>=0?'text-up':'text-down'}`}>{sol(t.realizedSol,4)}</td><td className="text-right">{sol(t.volumeSol,3)}</td><td className="px-3 text-right"><span className="text-up">{t.buys}</span> / <span className="text-down">{t.sells}</span></td></tr>)}
               </tbody></table>
             </>}
             {tab === "Trades" && (tapeOff || !tape.length) && <TapeOff />}
@@ -201,7 +200,6 @@ export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff
           <div>
             <div className="flex justify-between"><span className="text-muted">Bonding curve</span><span className="num text-soft">{c.curvePct.toFixed(1)}%</span></div>
             <div className="bar mt-2 h-1.5" role="progressbar" aria-label="Bonding curve progress" aria-valuenow={Math.round(c.curvePct)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${c.curvePct}%` }} /></div>
-            <p className="mt-1.5 text-muted">{c.venue === "graduated" ? "Paper fills model pool liquidity, impact and a 0.3% fee." : "The liquidity model estimates paper fills from observed pool data."}</p>
           </div>
           <Link href="/portfolio" className="block text-accent hover:underline">Open portfolio →</Link>
         </section>

@@ -8,3 +8,12 @@ test('enforce 25% cumulative entry exposure and cash',()=>{const s=newLedger();a
 test('expiry and overselling fail closed',()=>{const q=quoteOrder(newLedger(),c,'buy',1,100,1000);assert.throws(()=>applyOrder(newLedger(),q,11000),/expired/);assert.throws(()=>quoteOrder(newLedger(),c,'sell',100,100),/Not enough/);});
 test('thin liquidity and extreme impact reject',()=>{assert.throws(()=>quoteOrder(newLedger(),{...c,liquidityUsd:400},'buy',1,100));assert.throws(()=>quoteOrder(newLedger(),{...c,liquidityUsd:1000},'buy',1,50));});
 test('daily boundaries UTC and distributions never exceed funded pool',()=>{assert.equal(cycleAt(DAY-1),0);assert.equal(cycleAt(DAY),1);for(const pool of [0,1,1001,1000000000]){const a=rewardShares(pool,25);assert.ok(a.every(Number.isSafeInteger));assert.ok(a.reduce((x,y)=>x+y,0)<=Math.floor(pool*.9));}});
+test('custom token sale preserves the unsold balance and proportional cost',()=>{
+ const bought=applyOrder(newLedger(),quoteOrder(newLedger(),c,'buy',1,100,1000),1001).next;
+ const before=bought.positions[0],amount=123.456;
+ const q=quoteOrder(bought,c,'sell',amount,100,1002),result=applyOrder(bought,q,1003);
+ assert.equal(q.tokens,amount);assert.equal(result.next.positions.length,1);
+ assert.ok(Math.abs(result.next.positions[0].tokens-(before.tokens-amount))<1e-9);
+ assert.equal(result.next.positions[0].costLamports,before.costLamports-Math.round(before.costLamports*amount/before.tokens));
+ assert.throws(()=>quoteOrder(result.next,c,'sell',before.tokens,100,1004),/Not enough/);
+});
