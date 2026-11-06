@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "id": "solana_PoolMock111",
+      "attributes": {
+        "address": "PoolMock11111111111111111111111111111111111",
+        "reserve_in_usd": "250000",
+        "name": "MOCK / SOL"
+      }
+    }
+  ]
+}

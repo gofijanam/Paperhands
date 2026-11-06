@@ -1,0 +1,60 @@
+import {it,expect} from 'vitest';
+import * as nacl from 'tweetnacl';
+import bs58 from 'bs58';
+import {loadConfig} from '../src/config.js';
+import {openDb} from '../src/db.js';
+import {createApp} from '../src/app.js';
+import {createNonce,verifyAuth,issueSession,resolveSession} from '../src/auth/siws.js';
+import {checkHold} from '../src/hold/gate.js';
+const cfg=(extra={})=>loadConfig({DATABASE_PATH:':memory:',PAPERHANDS_MODE:'mock',...extra});
+it('real SIWS exact bytes, wrong signer, bindings, expiry, replay and sessions',()=>{
+ const c=cfg({PAPERHANDS_MODE:'live'}),d=openDb(c), k=nacl.sign.keyPair(),w=bs58.encode(k.publicKey);
+ const n=createNonce(d,c,w);const sign=(m:string,key=k)=>bs58.encode(nacl.sign.detached(new TextEncoder().encode(m),key.secretKey));
+ for(const m of [n.message+' ',n.message.replace('localhost','evil.example'),n.message.replace('http://localhost','https://evil.example'),n.message.replace('mainnet','devnet')]) expect(verifyAuth(d,c,w,m,sign(m)).ok).toBe(false);
+ expect(verifyAuth(d,c,w,n.message,sign(n.message,nacl.sign.keyPair())).ok).toBe(false);
+ expect(verifyAuth(d,c,w,n.message,sign(n.message+' ')).ok).toBe(false);
+ expect(verifyAuth(d,c,w,n.message,sign(n.message)).ok).toBe(true);
+ expect(verifyAuth(d,c,w,n.message,sign(n.message)).ok).toBe(false);
+ const n2=createNonce(d,c,w);d.prepare("UPDATE nonces SET expires_at='2000-01-01'").run();expect(verifyAuth(d,c,w,n2.message,sign(n2.message)).ok).toBe(false);
+ d.prepare("INSERT INTO users(id,wallet,role,banned,created_at) VALUES ('u',?,'user',0,'2026-01-01')").run(w);
+ const a=issueSession(d,'u',w),b=issueSession(d,'u',w);expect(a.token).not.toBe(b.token);expect(resolveSession(d,'fixed')).toBe(null);
+ d.prepare("UPDATE sessions SET expires_at='2000-01-01'").run();expect(resolveSession(d,a.token)).toBe(null);d.close();
+});
+it('hold TTL recheck and RPC failure close',async()=>{const c=cfg({PAPERHANDS_MODE:'live'}),d=openDb(c);let calls=0;const rpc:any={getTokenBalanceUi:async()=>{calls++;return calls===1?'100000':'0'}};expect((await checkHold(d,c,'w',{rpc})).ok).toBe(true);expect((await checkHold(d,c,'w',{rpc})).cached).toBe(true);expect(calls).toBe(1);d.prepare("UPDATE hold_cache SET checked_at='2000-01-01'").run();expect((await checkHold(d,c,'w',{rpc})).ok).toBe(false);await expect(checkHold(d,c,'w',{force:true,rpc:{getTokenBalanceUi:async()=>{throw Error('rpc fail')}} as any})).rejects.toThrow();d.close()});
+it('force refresh uses stale inner RPC cache',async()=>{
+ const {createRpcClient}=await import('../src/rpc/client.js');const c=cfg({PAPERHANDS_MODE:'live'}),d=openDb(c);let calls=0;
+ const rpc=createRpcClient(c,(async()=>{calls++;return new Response(JSON.stringify({result:{value:[{account:{data:{parsed:{info:{tokenAmount:{uiAmountString:calls===1?'100000':'0'}}}}}}]}}),{headers:{'content-type':'application/json'}})}) as any);
+ expect((await checkHold(d,c,'w',{rpc})).ok).toBe(true);expect((await checkHold(d,c,'w',{rpc,force:true})).ok).toBe(false);expect(calls).toBe(2);console.log('FORCE_REFRESH_REACHES_RPC');d.close();
+});
+
+import {clearAllRateLimits} from '../src/middleware/rateLimit.js';
+import {clearRateLimitsForTests} from '../src/anticheat/guards.js';
+import {solToLamports} from '../src/lib/money.js';
+const reset=()=>{clearAllRateLimits();clearRateLimitsForTests()};
+async function setup(){reset();const c=cfg({ADMIN_TOKEN:'test-admin'}),d=openDb(c),app=createApp({config:c,db:d});
+const req=async(path:string,body:any,token?:string,extra={})=>app.request(path,{method:'POST',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{}),...extra},body:JSON.stringify(body)});
+const login=async(w:string)=>{reset();const n:any=await(await app.request('/v1/auth/nonce?wallet='+w)).json();return (await(await req('/v1/auth/verify',{wallet:w,message:n.message,signature:'MOCK_SIG'})).json() as any).accessToken};
+const a=await login('A'.repeat(44)),b=await login('B'.repeat(44));
+const quote=async(body={})=>{reset();const r=await req('/v1/quotes',{mint:'PumpBondMock11111111111111111111111111111',side:'buy',amountSol:'0.5',slippageBps:500,...body},a);return {r,q:await r.json() as any}};
+return {c,d,app,req,a,b,quote};}
+for(const amount of ['-1','NaN','Infinity','1e309','9999999999999999999999999999999999','0','0.0001','0.1234567891'])it('independent amount '+amount,async()=>{const x=await setup();const {r}=await x.quote({amountSol:amount});expect(r.status).toBeGreaterThanOrEqual(400);x.d.close()});
+for(const side of ['other',null,1])it('independent invalid side '+side,async()=>{const x=await setup();expect((await x.quote({side})).r.status).toBe(400);x.d.close()});
+for(const slippageBps of [-1,10001,'NaN'])it('independent invalid slippage '+slippageBps,async()=>{const x=await setup();expect((await x.quote({slippageBps})).r.status).toBe(400);x.d.close()});
+it('independent price injection rejected',async()=>{const x=await setup();const {r,q}=await x.quote({priceSol:'999999'});expect(r.status===400||q.priceSol!=='999999').toBe(true);x.d.close()});
+it('independent foreign quote and race',async()=>{const x=await setup();const {q}=await x.quote();expect((await x.req('/v1/trades',{quoteId:q.quoteId},x.b)).status).toBeGreaterThanOrEqual(400);reset();const r=await Promise.all([x.req('/v1/trades',{quoteId:q.quoteId},x.a),x.req('/v1/trades',{quoteId:q.quoteId},x.a)]);expect(r.filter(y=>y.status===201).length).toBe(1);const pf:any=await(await x.app.request('/v1/portfolio',{headers:{authorization:'Bearer '+x.a}})).json();expect(Number(pf.cashSol)).toBeCloseTo(9.4999);x.d.close()});
+it('independent stale quote',async()=>{const x=await setup();const {q}=await x.quote();x.d.prepare("UPDATE quotes SET expires_at='2000-01-01'").run();expect((await x.req('/v1/trades',{quoteId:q.quoteId},x.a)).status).toBe(412);x.d.close()});
+for(const status of ['frozen','rugged'])it('independent fill flag '+status,async()=>{const x=await setup();const {q}=await x.quote();await x.req('/v1/admin/coins/'+q.mint+'/flag',{status},'test-admin');expect((await x.req('/v1/trades',{quoteId:q.quoteId},x.a)).status).toBe(422);x.d.close()});
+it('independent aggregate exposure',async()=>{const x=await setup();for(let i=0;i<6;i++){const {q}=await x.quote();reset();const r=await x.req('/v1/trades',{quoteId:q.quoteId},x.a);expect(r.status).toBe(i<5?201:403)}x.d.close()});
+it('independent logout and ranked reset',async()=>{const x=await setup();const {q}=await x.quote();await x.req('/v1/trades',{quoteId:q.quoteId},x.a);expect((await x.req('/v1/portfolio/reset',{confirm:true},x.a)).status).toBeGreaterThanOrEqual(400);await x.req('/v1/auth/logout',{},x.a);expect((await x.app.request('/v1/auth/me',{headers:{authorization:'Bearer '+x.a}})).status).toBe(401);x.d.close()});
+it('independent CORS and admin default',async()=>{const x=await setup();const r=await x.app.request('/v1/health',{headers:{origin:'https://evil.example'}});expect(r.headers.get('access-control-allow-origin')).not.toBe('https://evil.example');expect((await x.app.request('/v1/admin/config')).status).toBe(401);expect(()=>cfg({PAPERHANDS_MODE:'live',ADMIN_TOKEN:'x'})).toThrow();x.d.close()});
+it('independent auth limit and sanitized response',async()=>{const x=await setup();reset();let limited=0;for(let i=0;i<12;i++){const r=await x.app.request('/v1/auth/nonce?wallet='+('A'.repeat(44)));if(r.status===429)limited++}expect(limited).toBeGreaterThan(0);const app=createApp({config:x.c,db:x.d,catalog:{search:async()=>{throw Error('SYNTHETIC_SECRET_MARKER')}} as any});reset();const r=await app.request('/v1/coins/search?q=test');expect(await r.text()).not.toContain('SYNTHETIC_SECRET_MARKER');x.d.close()});
+it('independent decimal exactness',()=>{expect(()=>solToLamports('-0.1')).toThrow();expect(()=>solToLamports('0.1234567891')).toThrow();expect(solToLamports('9007199254740993')).toBe(9007199254740993000000000n)});
+
+import {assertFillLiquidityCap,detectWash,checkWalletRateLimit} from '../src/anticheat/guards.js';
+import {buildQuote} from '../src/engine/execute.js';
+import {markMint,valuePosition} from '../src/portfolio/valuation.js';
+it('independent null liquidity cap closed',()=>{expect(()=>assertFillLiquidityCap(cfg(),'1',null)).toThrow()});
+it('independent wallet rate limit burst',()=>{reset();const r=Array.from({length:10},()=>checkWalletRateLimit('robin','trade'));expect(r.some(x=>!x.ok)).toBe(true)});
+it('independent wash detector',()=>{const c=cfg(),d=openDb(c);d.prepare("INSERT INTO trades(id,user_id,cycle_id,mint,side,payload,filled_at) VALUES ('t','u','c','m','buy','{}',?)").run(new Date().toISOString());expect(()=>detectWash(d,c,'u','m','sell','100')).toThrow();d.close()});
+it('independent rugged zero valuation',async()=>{const c=cfg(),d=openDb(c);const m=await markMint({getCoin:async()=>({status:'rugged',priceSol:'1'})} as any,d,'m');expect(m.markSol).toBe('0');expect(valuePosition({mint:'m',qty:'100',cost_sol:'1'},m).valueSol).toBe('0');d.close()});
+it('independent rugged quote rejected',async()=>{await expect(buildQuote(cfg(),{mint:'m',side:'buy',amountSol:'1',slippageBps:100,venue:'graduated',decimals:6,status:'rugged',liquidityUsd:'10000'})).rejects.toThrow()});

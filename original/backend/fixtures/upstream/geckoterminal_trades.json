@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": "solana_1_txA",
+      "type": "trade",
+      "attributes": {
+        "block_number": 1,
+        "tx_hash": "TxHashMock111111111111111111111111111111111111111111111111111",
+        "tx_from_address": "Trader1111111111111111111111111111111111111",
+        "from_token_amount": "0.5",
+        "to_token_amount": "1000000",
+        "price_from_in_currency_token": "1.0",
+        "price_to_in_currency_token": "0.0000005",
+        "block_timestamp": "2026-11-06T00:00:00Z",
+        "kind": "buy",
+        "volume_in_usd": "90"
+      }
+    },
+    {
+      "id": "solana_2_txB",
+      "type": "trade",
+      "attributes": {
+        "tx_hash": "TxHashMock222222222222222222222222222222222222222222222222222",
+        "tx_from_address": "Trader2222222222222222222222222222222222222",
+        "from_token_amount": "500000",
+        "to_token_amount": "0.2",
+        "price_from_in_currency_token": "0.0000004",
+        "price_to_in_currency_token": "1.0",
+        "block_timestamp": "2026-11-06T00:01:00Z",
+        "kind": "sell",
+        "volume_in_usd": "36"
+      }
+    }
+  ]
+}

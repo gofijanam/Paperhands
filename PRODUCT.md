@@ -1,0 +1,3 @@
+# Paperhands
+Solana paper trading terminal. Hold 50,000 PAPER to enter the holder competition. Each 24-hour UTC cycle begins with 10 virtual SOL. Trades never transfer funds. Anonymous practice is separate from wallet-verified competition, never eligible for rewards.
+Server owns balances, fills, quote expiry, risk limits, token-hold verification, rankings and cycle records. Market data comes from public Solana pool providers; unavailable data stays unavailable. Reward funding and token mint must be configured before competition can activate. Reward payouts are a reviewed queue until a funded payout integration is explicitly configured.

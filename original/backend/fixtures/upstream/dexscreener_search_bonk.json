@@ -1,0 +1,18 @@
+{
+  "pairs": [
+    {
+      "chainId": "solana",
+      "dexId": "raydium",
+      "pairAddress": "MockBonkPair111111111111111111111111111",
+      "baseToken": { "address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", "symbol": "BONK", "name": "Bonk" },
+      "quoteToken": { "address": "So11111111111111111111111111111111111111112", "symbol": "SOL", "name": "Wrapped SOL" },
+      "priceNative": "0.000000012",
+      "priceUsd": "0.00000216",
+      "liquidity": { "usd": 5000000 },
+      "volume": { "h24": 12000000 },
+      "priceChange": { "h24": 4.2 },
+      "marketCap": 1400000000,
+      "pairCreatedAt": 1700000000000
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "id": "solana_MockPool111",
+      "attributes": {
+        "name": "BONK / SOL",
+        "address": "MockPool111",
+        "base_token_price_usd": "0.00000216",
+        "volume_usd": { "h24": "9000000" },
+        "price_change_percentage": { "h24": "3.1" },
+        "reserve_in_usd": "4500000",
+        "base_token_address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+      }
+    }
+  ]
+}

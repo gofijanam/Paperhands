@@ -1,0 +1,10 @@
+{
+  "inputMint": "So11111111111111111111111111111111111111112",
+  "inAmount": "100000000",
+  "outputMint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+  "outAmount": "8000000000000",
+  "otherAmountThreshold": "7920000000000",
+  "priceImpactPct": "0.12",
+  "slippageBps": 100,
+  "routePlan": []
+}

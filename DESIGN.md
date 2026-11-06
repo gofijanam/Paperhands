@@ -1,0 +1,5 @@
+# Paperhands interface
+Operate mode. Preserve the existing sidebar, four-column market screen, coin terminal, portfolio, leaderboard and rewards routes.
+Palette: background #070708; panels #0e0e10 / #141417; border #2c2c33; text #fafaf8; lime #c6ff3d; positive #3ddc84; negative #ff5d5d. Retain self-hosted Geist and Geist Mono (numbers only).
+Refine dense market rows with real token images, liquidity, volume, watchlists and explicit freshness. Keep equal alignment, 8/12/16px grouping, native links and keyboard controls. Charts dominate coin pages; order ticket remains a stable right rail. Motion responds to actual data or actions; never fabricate market activity. Reduced-motion disables moving tickers and digit rolling. Small screens use one feed column and a bottom trade sheet.
+Reference review: GMGN's visible Solana terminal provides compact scan-first data and persistent filters. Pump.fun browser was region-restricted; public content only reviewed. panz.family chart source could not be recovered: retain supported TradingView Lightweight Charts with candle/line modes, markers, volume and position levels.
