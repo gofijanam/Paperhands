@@ -1,10 +1,10 @@
 "use client";
 import {useState} from "react";
 import { hash } from "@/lib/rng";
-// Geometric generative mark per mint (MOCK coins have no image). Real coin images replace this.
+// Deterministic fallback only when a real token image is missing or cannot load.
 export function CoinAvatar({ mint, size = 36, label, imageUrl }: { mint: string; size?: number; label?: string; imageUrl?:string|null }) {
-  const [failed,setFailed]=useState(false);
-  if(imageUrl && !failed) return <img src={imageUrl} alt={label||""} width={size} height={size} loading="lazy" referrerPolicy="no-referrer" onError={()=>setFailed(true)} className="shrink-0 rounded-lg object-cover" style={{width:size,height:size}}/>;
+  const [failedUrl,setFailedUrl]=useState<string|null>(null);
+  if(imageUrl && failedUrl!==imageUrl) return <img src={imageUrl} alt={label||""} width={size} height={size} loading="lazy" referrerPolicy="no-referrer" onError={()=>setFailedUrl(imageUrl)} className="shrink-0 rounded-lg object-cover" style={{width:size,height:size}}/>;
   const h = hash(mint);
   const hue = h % 360, hue2 = (hue + 40 + ((h >> 8) % 120)) % 360;
   const cells = Array.from({ length: 9 }, (_, i) => (h >> (i + 3)) & 1);

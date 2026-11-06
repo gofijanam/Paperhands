@@ -46,6 +46,13 @@ export async function account(s:{user:string;wallet:string|null}){
 export async function snapshot(s:{user:string;wallet:string|null},hold?:any){
  const a=await account(s),l:Ledger=a.ledger;
  const positions=await Promise.all(l.positions.map(async p=>{const c=await marketCoin(p.mint).catch(()=>null);return {...p,costSol:p.costLamports/LAMPORTS,valueSol:c&&c.status==='tradeable'?p.tokens*c.priceSol:p.lastPriceSol?p.tokens*p.lastPriceSol:undefined,markStatus:c&&c.status==='tradeable'?(Date.now()-c.observedAt<30000?'fresh':'stale'):p.lastPriceSol?'stale':'unknown',markAsOf:c?.observedAt||p.markAt||null};}));
+ // Persist actual account observations, not only fills; never record missing marks as zero.
+ const now=Date.now(),lastPoint=l.equity.at(-1);
+ if((!lastPoint||now-lastPoint.t>=60000)&&positions.every(p=>p.markStatus==='fresh'&&Number.isFinite(p.valueSol))){
+  const next={...l,equity:[...l.equity,{t:now,v:l.cash/LAMPORTS+positions.reduce((sum,p)=>sum+p.valueSol!,0)}].slice(-1440)};
+  const saved=await db().prepare('UPDATE paper_accounts SET data=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(next),a.id,a.version).run();
+  if(saved.meta.changes){l.equity=next.equity;a.version++;}
+ }
  const fills=await db().prepare('SELECT data FROM paper_fills WHERE account=? ORDER BY created DESC LIMIT 200').bind(a.id).all<{data:string}>();
  const h=hold??(s.wallet?await balance(s.wallet):{balance:0,ok:true,configured:!!cfg('PAPER_MINT')});
  return {version:a.version,accountId:a.id,wallet:s.wallet,practice:!s.wallet,source:'live',balance:l.cash/LAMPORTS,bankroll:10,paperHeld:h.balance,minHold:50000,passes:!s.wallet||h.ok,gateConfigured:h.configured,cycle:a.cycle,positions,fills:fills.results.map(x=>JSON.parse(x.data)),equity:l.equity,eligible:!!s.wallet&&l.eligible&&h.ok};

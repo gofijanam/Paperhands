@@ -1,3 +1,5 @@
+import {rpc} from './rpc';
+import {enhancedTrades} from '../enhanced-trades';
 import {sharedHeliusStream} from './node-stream';
 import {env} from '@/lib/server/runtime';
 import {gmgnInfo} from './gmgn';
@@ -31,7 +33,6 @@ async function resolveStreamMarket(mint:string):Promise<EventMarket|null>{
  }
 }
 
-async function rpc(method:string,params:any[]){const url=cfg('SOLANA_RPC_URL');if(!url)throw new Error('On-chain feed unavailable');const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(7000)});const j:any=await r.json();if(!r.ok||j.error)throw new Error('On-chain provider is temporarily unavailable');return j.result;}
 export async function recentPumpTrades(mint:string):Promise<TTrade[]>{
  const key='helius-tape:'+mint,saved=await env.DB?.prepare('SELECT data,expires FROM market_cache WHERE key=?').bind(key).first<any>();if(saved?.expires>Date.now())return JSON.parse(saved.data);
  const c=await streamMarket(mint);if(!c)return [];
@@ -43,20 +44,39 @@ export async function recentPumpTrades(mint:string):Promise<TTrade[]>{
 }
 export async function heliusStream(req:Request,mint:string){
  if(cfg('MARKET_GATEWAY_URL')){const u=new URL('/stream',cfg('MARKET_GATEWAY_URL'));u.searchParams.set('mint',mint);const r=await fetch(u,{headers:{Authorization:'Bearer '+cfg('MARKET_GATEWAY_TOKEN')},signal:req.signal});return new Response(r.body,{status:r.status,headers:{'Content-Type':r.headers.get('Content-Type')||'application/json','Cache-Control':'no-cache, no-transform','X-Accel-Buffering':'no'}});}
- const c=await streamMarket(mint);if(!c)return Response.json({error:'Instant tape supports SOL-quoted Pump.fun / PumpSwap pools. Other pools use market snapshots.'},{status:422});
+ const c=await streamMarket(mint);if(!c)return new Response('event: status\ndata: '+JSON.stringify({state:'snapshot',source:'market',reason:'This pool uses verified trade snapshots.'})+'\n\n',{headers:{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform'}});
  return sharedHeliusStream(req,c,cfg('SOLANA_WS_URL'));
 }
 
 /** Largest token accounts from RPC; this is not a total holder count or a full holder index. */
-export async function rpcHolders(mint:string){
+const holderRequests=new Map<string,Promise<any[]>>();
+export function rpcHolders(mint:string){
+ const pending=holderRequests.get(mint);if(pending)return pending;
+ const task=loadRpcHolders(mint).finally(()=>holderRequests.delete(mint));holderRequests.set(mint,task);return task;
+}
+async function loadRpcHolders(mint:string){
  const key='helius-holders:'+mint;const saved=await env.DB?.prepare('SELECT data,expires FROM market_cache WHERE key=?').bind(key).first<any>();if(saved?.expires>Date.now())return JSON.parse(saved.data);
  const [accounts,supply]=await Promise.all([rpc('getTokenLargestAccounts',[mint,{commitment:'confirmed'}]),rpc('getTokenSupply',[mint,{commitment:'confirmed'}])]);
  const total=Number(supply?.value?.amount);if(!(total>0))return [];
  const largest=accounts?.value||[];
  if(!largest.length)return [];
- const resolved=await rpc('getMultipleAccounts',[largest.map((a:any)=>a.address),{encoding:'jsonParsed',commitment:'confirmed'}]);
+ const resolved=await rpc('getMultipleAccounts',[largest.map((a:any)=>a.address),{encoding:'jsonParsed',commitment:'confirmed'}]).catch(()=>null);
  const grouped=new Map<string,{owner:string;label:string;tokens:number;pct:number}>();
  largest.forEach((a:any,i:number)=>{const wallet=resolved?.value?.[i]?.data?.parsed?.info?.owner;const owner=wallet||a.address;const row=grouped.get(owner)||{owner,label:wallet?'RPC owner':'RPC token account',tokens:0,pct:0};row.tokens+=Number(a.amount)/10**a.decimals;row.pct+=Number(a.amount)/total*100;grouped.set(owner,row);});
  const rows=[...grouped.values()].sort((a,b)=>b.pct-a.pct);
  await env.DB?.prepare('INSERT INTO market_cache(key,data,fetched,expires) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched=excluded.fetched,expires=excluded.expires').bind(key,JSON.stringify(rows),Date.now(),Date.now()+60000).run();return rows;
+}
+
+const enhancedRequests=new Map<string,Promise<TTrade[]>>();
+export function recentEnhancedTrades(c:{mint:string;pool:string;symbol:string;priceUsd:number;priceSol:number}):Promise<TTrade[]>{
+ const existing=enhancedRequests.get(c.mint);if(existing)return existing;
+ const task=(async()=>{
+  const key='enhanced-tape:'+c.mint,saved=await env.DB?.prepare('SELECT data,expires FROM market_cache WHERE key=?').bind(key).first<any>();if(saved?.expires>Date.now())return JSON.parse(saved.data);
+  const rpcUrl=new URL(cfg('SOLANA_RPC_URL')),apiKey=rpcUrl.searchParams.get('api-key');if(!rpcUrl.hostname.endsWith('helius-rpc.com')||!apiKey)return [];
+  const url=new URL(`https://api-mainnet.helius-rpc.com/v0/addresses/${c.pool}/transactions`);url.search=new URLSearchParams({'api-key':apiKey,limit:'20',type:'SWAP'}).toString();
+  const response=await fetch(url,{signal:AbortSignal.timeout(6500)});if(!response.ok)throw new Error('Trade history is temporarily unavailable');
+  const json=await response.json();if(!Array.isArray(json))throw new Error('Invalid trade history response');
+  const rows=enhancedTrades(json,{mint:c.mint,symbol:c.symbol,solUsd:c.priceUsd/c.priceSol});
+  await env.DB?.prepare('INSERT INTO market_cache(key,data,fetched,expires) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET data=excluded.data,fetched=excluded.fetched,expires=excluded.expires').bind(key,JSON.stringify(rows),Date.now(),Date.now()+30000).run();return rows;
+ })().finally(()=>enhancedRequests.delete(c.mint));enhancedRequests.set(c.mint,task);return task;
 }

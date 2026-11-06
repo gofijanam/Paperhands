@@ -34,7 +34,7 @@ export type TCoin = z.infer<typeof Coin>;
 export const FeedColumn = z.enum(["trending", "new", "graduating"]);
 export type TFeedColumn = z.infer<typeof FeedColumn>;
 
-export const Candle = z.object({ time: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() });
+export const Candle = z.object({ source:z.enum(['pool-history','observed-trades']).optional(), time: z.number(), open: z.number(), high: z.number(), low: z.number(), close: z.number(), volume: z.number() });
 export type TCandle = z.infer<typeof Candle>;
 export const Timeframe = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
 export type TTimeframe = z.infer<typeof Timeframe>;

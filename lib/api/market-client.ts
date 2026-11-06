@@ -1,7 +1,7 @@
 import {subscribeMarket} from '../market-stream';
 import type {PaperApi,TCoin,TQuote} from './schema';
 export const marketRequest=async(action:string,params:Record<string,string>={})=>{
- const r=await fetch(`/api/market?${new URLSearchParams({action,...params})}`,{signal:AbortSignal.timeout(12000)});const j:any=await r.json();if(!r.ok)throw new Error(j.error||'Market data unavailable');return j.data;
+ const r=await fetch(`/api/market?${new URLSearchParams({action,...params})}`,{signal:AbortSignal.timeout(['candles','trades'].includes(action)?20000:15000)});const j:any=await r.json();if(!r.ok)throw new Error(j.error||'Market data unavailable');return j.data;
 };
 export async function paperRequest(action:string,token?:string|null,body?:any,intent?:string){
  const r=await fetch(`/api/paper/${action}`,{method:body!==undefined?'POST':'GET',headers:{...(token?{authorization:`Bearer ${token}`} :{}),...(body!==undefined?{'content-type':'application/json'}:{}),...(intent?{'idempotency-key':intent}:{})},body:body!==undefined?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});const j:any=await r.json();if(!r.ok)throw Object.assign(new Error(j.error||'Request failed'),{status:r.status});return j;

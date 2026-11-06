@@ -1,3 +1,4 @@
+import {tradeCandles} from '../trade-candles';
 import {recentStreamTrades} from './node-stream';
 import {normalizeDexAnalytics} from '../dex-analytics';
 import {env} from '@/lib/server/runtime';
@@ -9,9 +10,10 @@ export const SOL = 'So11111111111111111111111111111111111111112';
 export const validMint = (x: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(x);
 export type MarketCoin = TCoin & { pool: string; dex: string; observedAt: number; change5mPct?: number; change1hPct?: number; buys24h?: number; sells24h?: number; marketCapEstimated?: boolean };
 const cache = new Map<string, { until:number; value:any }>();
-let geckoRetryAt=0;
+const shared=globalThis as typeof globalThis&{paperhandsGecko?:{retryAt:number;nextAt:number}};
+const geckoBudget=shared.paperhandsGecko??={retryAt:0,nextAt:0};
 const pending = new Map<string, Promise<any>>();
-export async function upstream(url:string, ttl=15000):Promise<any> {
+export async function upstream(url:string, ttl=15000,staleMs=120000):Promise<any> {
   const tag=(value:any,asOf:number)=>{Object.defineProperty(value,'_asOf',{value:asOf,configurable:true});return value;};
   const hit=cache.get(url); if(hit && hit.until>Date.now()) return hit.value;
   if(pending.has(url)) return pending.get(url);
@@ -20,9 +22,14 @@ export async function upstream(url:string, ttl=15000):Promise<any> {
     try {saved=await env.DB?.prepare('SELECT data,fetched,expires FROM market_cache WHERE key=?').bind(url).first();}catch{}
     if(saved&&saved.expires>Date.now()){const v=tag(JSON.parse(saved.data),saved.fetched);cache.set(url,{until:saved.expires,value:v});return v;}
     try{
-      if(url.startsWith(GT)&&Date.now()<geckoRetryAt)throw new Error('Market provider is busy.');
+      if(url.startsWith(GT)){
+       if(Date.now()<geckoBudget.retryAt)throw new Error('Candle provider is cooling down. Retrying automatically.');
+       const wait=Math.max(0,geckoBudget.nextAt-Date.now());if(wait>8000)throw new Error('Market history queue is busy. Retrying automatically.');
+       geckoBudget.nextAt=Math.max(Date.now(),geckoBudget.nextAt)+2200;
+       if(wait)await new Promise(r=>setTimeout(r,wait));
+      }
       const r=await fetch(url,{headers:{accept:'application/json'},signal:AbortSignal.timeout(7000)});
-      if(r.status===429&&url.startsWith(GT))geckoRetryAt=Date.now()+60000;
+      if(r.status===429&&url.startsWith(GT))geckoBudget.retryAt=Date.now()+Math.min(120000,Math.max(15000,(Number(r.headers.get("retry-after"))||60)*1000));
       if(!r.ok) throw new Error(r.status===429?'Market provider is busy. Try again shortly.':`Market data unavailable (${r.status}).`);
       const value:any=await r.json(), now=Date.now();
       const expires=now+ttl;
@@ -30,7 +37,7 @@ export async function upstream(url:string, ttl=15000):Promise<any> {
       tag(value,now);if(cache.size>500)cache.delete(cache.keys().next().value!);cache.set(url,{until:expires,value});return value;
     }catch(e){
       // Last real observation, at most two minutes old. Quotes separately reject stale prices.
-      if(saved&&Date.now()-saved.fetched<120000)return tag(JSON.parse(saved.data),saved.fetched);
+      if(saved&&Date.now()-saved.fetched<staleMs)return tag(JSON.parse(saved.data),saved.fetched);
       throw e;
     }
   })().finally(()=>pending.delete(url));pending.set(url,task);return task;
@@ -53,14 +60,14 @@ function unique(cs:MarketCoin[]){const seen=new Set();return cs.filter(c=>!seen.
 export async function marketFeed(col:TFeedColumn){
  if(gmgnEnabled()){try{const cs=await gmgnFeed(col);if(cs.length)return remember(cs as MarketCoin[]);}catch{}}
   const endpoint=col==='new'?'new_pools':col==='graduating'?'dexes/pumpswap/pools':'trending_pools';
-  try {const j=await upstream(`${GT}/networks/solana/${endpoint}?include=base_token,quote_token,dex&page=1`,30000);return unique(remember(gecko(j)));} catch { return dexFeed(col); }
+  try {const j=await upstream(`${GT}/networks/solana/${endpoint}?include=base_token,quote_token,dex&page=1`,120000);return unique(remember(gecko(j)));} catch { return dexFeed(col); }
 }
 export async function marketCoin(mint:string, fresh=false):Promise<MarketCoin|null>{
   if(!validMint(mint)) return null;
   if(gmgnEnabled()){try{const c=await gmgnCoin(mint,fresh);if(c){remember([c]);return c;}}catch{}}
   // Executable quotes must not get stuck on an old bulk discovery snapshot.
   // Prefer the fast public token endpoint for fresh quotes when GMGN is unavailable.
-  if(fresh){try{const pairs=await upstream(`${DX}/tokens/v1/solana/${mint}`,2000);const c=(await mapDex(pairs)).filter(c=>c.mint===mint&&Date.now()-c.observedAt<10000).sort((a,b)=>b.liquidityUsd-a.liquidityUsd)[0];if(c){remember([c]);return c;}}catch{}}
+  {try{const pairs=await upstream(`${DX}/tokens/v1/solana/${mint}`,fresh?2000:15000);const c=(await mapDex(pairs)).filter(c=>c.mint===mint&&(!fresh||Date.now()-c.observedAt<10000)).sort((a,b)=>b.liquidityUsd-a.liquidityUsd)[0];if(c){remember([c]);return c;}}catch{}}
   // Reuse a recently observed bulk snapshot before spending another public API call.
   try{const rows=await env.DB?.prepare("SELECT data,fetched FROM market_cache WHERE key LIKE 'https://api.dexscreener.com/%' AND fetched>? AND data LIKE ? ORDER BY fetched DESC LIMIT 4").bind(Date.now()-120000,'%'+mint+'%').all<any>();
    for(const row of rows?.results||[]){if(fresh&&Date.now()-row.fetched>10000)continue;const data=JSON.parse(row.data),pairs=Array.isArray(data)?data:data.pairs;if(!Array.isArray(pairs))continue;const selected=pairs.filter((p:any)=>p.baseToken?.address===mint&&p.priceUsd);Object.defineProperty(selected,'_asOf',{value:row.fetched});const c=(await mapDex(selected)).sort((a,b)=>b.liquidityUsd-a.liquidityUsd)[0];if(c){remember([c]);return c;}}
@@ -78,6 +85,7 @@ export async function marketSearch(q:string){
   if(!q.trim()) return [];
   if(validMint(q.trim())){const c=await marketCoin(q.trim());return c?[c]:[];}
   if(gmgnEnabled()){try{const cs=await gmgnSearch(q);if(cs.length)return remember(cs as MarketCoin[]);}catch{}}
+  try{const rows=await dexFallback(q);if(rows.length)return rows;}catch{}
   const j=await upstream(`${GT}/search/pools?query=${encodeURIComponent(q.slice(0,80))}&network=solana&include=base_token,quote_token,dex`,20000);
   return unique(remember(gecko(j))).slice(0,12);
 }
@@ -86,20 +94,37 @@ export async function marketCandles(mint:string,tf:TTimeframe):Promise<TCandle[]
   const c=await marketCoin(mint);if(!c)return [];
   const periods:Record<string,[string,number]>={'1m':['minute',1],'5m':['minute',5],'15m':['minute',15],'1h':['hour',1],'4h':['hour',4],'1d':['day',1]};
   const [frame,aggregate]=periods[tf]??periods['5m'];
-  const j=await upstream(`${GT}/networks/solana/pools/${c.pool}/ohlcv/${frame}?aggregate=${aggregate}&limit=300&currency=usd&token=${mint}`,20000);
-  return (j.data?.attributes?.ohlcv_list??[]).map((r:number[])=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4],volume:r[5]})).filter((r:TCandle)=>[r.time,r.open,r.high,r.low,r.close,r.volume].every(Number.isFinite)).sort((a:TCandle,b:TCandle)=>a.time-b.time);
+  try{
+  const j=await upstream(`${GT}/networks/solana/pools/${c.pool}/ohlcv/${frame}?aggregate=${aggregate}&limit=300&currency=usd&token=${mint}`,tf==='1m'?30000:60000,86400000);
+  const rows=(j.data?.attributes?.ohlcv_list??[]).map((r:number[])=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4],volume:r[5]})).filter((r:TCandle)=>[r.time,r.open,r.high,r.low,r.close,r.volume].every(Number.isFinite)).sort((a:TCandle,b:TCandle)=>a.time-b.time);
+  if(rows.length)return rows;
+  }catch{}
+  const seconds=frame==='day'?86400:frame==='hour'?aggregate*3600:aggregate*60;
+  const trades=recentStreamTrades(mint);const observed=tradeCandles(trades.length?trades:await marketTrades(mint),seconds);
+  if(!observed.length)throw new Error('Market history is temporarily unavailable. Retrying automatically.');
+  return observed;
+
 }
-export async function marketTrades(mint:string):Promise<TTrade[]>{
- const live=recentStreamTrades(mint);if(live.length)return live;
- if((env as any).SOLANA_RPC_URL||process.env.SOLANA_RPC_URL){try{const {recentPumpTrades}=await import('./helius');const ts=await recentPumpTrades(mint);if(ts.length)return ts;}catch{}}
-  const c=await marketCoin(mint);if(!c)return [];
-  const j=await upstream(`${GT}/networks/solana/pools/${c.pool}/trades`,12000);
-  const solUsd=c.priceUsd/c.priceSol;
-  return (j.data??[]).map((x:any)=>{const a=x.attributes;return {id:x.id,mint,symbol:c.symbol,trader:a.tx_from_address||'Unknown',side:a.kind,sol:f(a.volume_in_usd)/solUsd,tokens:f(a.kind==='buy'?a.to_token_amount:a.from_token_amount),priceUsd:f(a.kind==='buy'?a.price_to_in_usd:a.price_from_in_usd),ts:Date.parse(a.block_timestamp)};}).filter((x:TTrade)=>x.side==='buy'||x.side==='sell');
+const tradeRequests=new Map<string,Promise<TTrade[]>>();
+export function marketTrades(mint:string):Promise<TTrade[]>{
+ const live=recentStreamTrades(mint);if(live.length)return Promise.resolve(live);
+ const pending=tradeRequests.get(mint);if(pending)return pending;
+ const task=loadTrades(mint).finally(()=>tradeRequests.delete(mint));tradeRequests.set(mint,task);return task;
+}
+async function loadTrades(mint:string):Promise<TTrade[]>{
+ const c=await marketCoin(mint);if(!c)return [];
+ const {recentPumpTrades,recentEnhancedTrades}=await import('./helius');
+ const nonempty=async(p:Promise<TTrade[]>)=>{const rows=await p;if(!rows.length)throw new Error('No verified swaps returned');return rows;};
+ const publicTrades=async()=>{
+  const j=await upstream(`${GT}/networks/solana/pools/${c.pool}/trades`,20000);const solUsd=c.priceUsd/c.priceSol;
+  return (j.data??[]).map((x:any)=>{const a=x.attributes;return {id:a.tx_hash||x.id,mint,symbol:c.symbol,trader:a.tx_from_address||'Unknown',side:a.kind,sol:f(a.volume_in_usd)/solUsd,tokens:f(a.kind==='buy'?a.to_token_amount:a.from_token_amount),priceUsd:f(a.kind==='buy'?a.price_to_in_usd:a.price_from_in_usd),ts:Date.parse(a.block_timestamp)};}).filter((x:TTrade)=>(x.side==='buy'||x.side==='sell')&&x.tokens>0&&x.sol>0);
+ };
+ try{return await Promise.any([nonempty(publicTrades()),nonempty(c.dex==='pumpswap'||c.dex==='pump-fun'?recentPumpTrades(mint).then(rows=>rows.length?rows:recentEnhancedTrades(c)):recentEnhancedTrades(c))]);}
+ catch{throw new Error('Trade providers are temporarily unavailable for this pool. Retrying automatically.');}
 }
 export async function dexFallback(q:string):Promise<MarketCoin[]>{
  const j=await upstream(`${DX}/latest/dex/search?q=${encodeURIComponent(q)}`,20000);
- const pairs=(j.pairs??[]).filter((p:any)=>p.chainId==='solana'&&p.quoteToken?.address===SOL);
+ const pairs=(j.pairs??[]).filter((p:any)=>p.chainId==='solana'&&p.quoteToken?.address===SOL).sort((a:any,b:any)=>f(b.liquidity?.usd)-f(a.liquidity?.usd));
  return unique(remember(pairs.map((p:any)=>({mint:p.baseToken.address,symbol:p.baseToken.symbol,name:p.baseToken.name,imageUrl:cleanUrl(p.info?.imageUrl),priceUsd:f(p.priceUsd),priceSol:f(p.priceNative),mcapUsd:f(p.marketCap)||f(p.fdv),marketCapEstimated:!p.marketCap,vol24hUsd:f(p.volume?.h24),change24hPct:f(p.priceChange?.h24),liquidityUsd:f(p.liquidity?.usd),holders:NaN,ageSec:Math.max(0,(Date.now()-(p.pairCreatedAt||Date.now()))/1000),venue:'graduated',curvePct:100,athUsd:NaN,status:f(p.liquidity?.usd)>=1000?'tradeable':'untradeable',pool:p.pairAddress,dex:p.dexId,observedAt:j._asOf||Date.now(),riskBadges:[],decimals:9})))) as MarketCoin[];
 }
 export async function marketTicks(mints:string[]){
@@ -136,3 +161,10 @@ async function dexFeed(col:TFeedColumn){
 }
 
 export async function marketAnalytics(mint:string){const pairs=await upstream(`${DX}/tokens/v1/solana/${mint}`,10000);return normalizeDexAnalytics(pairs,mint,pairs._asOf);}
+
+export async function marketMetadata(mints:string[]){
+ if(!mints.length)return [];
+ const raw=await upstream(`${DX}/tokens/v1/solana/${mints.slice(0,30).join(',')}`,60000);
+ return unique(remember((await mapDex(raw)).filter(c=>mints.includes(c.mint)).sort((a,b)=>b.liquidityUsd-a.liquidityUsd)));
+}
+export async function solPrice(){const price=await solUsdPrice();const row=cache.get(`${DX}/token-pairs/v1/solana/${SOL}`);return {priceUsd:price,observedAt:row?.value?._asOf||Date.now()};}

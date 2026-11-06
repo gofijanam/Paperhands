@@ -39,3 +39,9 @@ test('hidden tabs close and never reconnect until visible',t=>{
  doc.hidden=true;doc.dispatchEvent(new Event('visibilitychange'));t.mock.timers.tick(120000);assert.equal(Feed.all.length,1);assert.equal(Feed.all[0].closed,true);
  doc.hidden=false;doc.dispatchEvent(new Event('visibilitychange'));assert.equal(Feed.all.length,2);
 });
+
+test('snapshot-only pools do not retry unsupported live subscriptions in a loop',t=>{
+ const {Feed,cleanup}=setup(t),states:string[]=[];cleanup.push(subscribeMarket('snapshot-only',{status:s=>states.push(s.state)}));
+ Feed.all[0].emit('status',{state:'snapshot'});Feed.all[0].onerror!();t.mock.timers.tick(120000);
+ assert.equal(states.at(-1),'snapshot');assert.equal(Feed.all.length,1);assert.equal(Feed.all[0].closed,true);
+});

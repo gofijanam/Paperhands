@@ -25,3 +25,9 @@ Required server variables: `SOLANA_RPC_URL`, `SOLANA_WS_URL`. Optional `GMGN_API
 `pnpm test`; `node --test services/market-gateway/gateway.test.mjs`; `pnpm exec tsc --noEmit`; `pnpm build`.
 
 Account records and API keys are stored privately in Railway runtime storage/variables, not in GitHub. A one-time import of the old preview's practice ledger is supported through `PAPER_MIGRATION_BASE64`; it is accepted only into empty tables and recorded as a migration.
+
+## Portfolio and data resilience
+
+Portfolio amounts show SOL plus the current USD equivalent, with an interactive baseline chart, time windows, crosshair inspection and a data table. Historical USD equivalents use the current SOL/USD rate, not a claimed historical FX series. Real account observations are persisted at most once per minute when all position marks are fresh. Missing position prices never become zero valuations.
+
+Search, open positions and trade history use token metadata images. Native token charts retain prior data during temporary provider failures; switching to the external DEX chart is explicit. If full history is unavailable, candles can be aggregated from verified observed trades and are labeled limited history. Empty buckets are never fabricated. Helius Enhanced swap history supplies a bounded fallback for other DEX pools, with per-token caching; full realtime coverage and complete holder indexing remain provider-dependent.

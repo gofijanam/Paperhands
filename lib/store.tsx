@@ -5,7 +5,7 @@ export type MarkStatus='fresh'|'stale'|'rugged'|'unknown';
 export type Position={mint:string;symbol:string;tokens:number;costSol:number;openedAt:number;valueSol?:number;markStatus?:MarkStatus;markAsOf?:number|null};
 export type Fill={id:string;mint:string;symbol:string;side:'buy'|'sell';sol:number;tokens:number;priceSol:number;feeSol:number;pnlSol?:number|null;ts:number};
 export type TradeInput={mint:string;symbol:string;side:'buy'|'sell';sol?:number;fraction?:number;priceSol:number;venue:string;impactPct:number;quoteId?:string;intentKey?:string};
-type State={version?:number;accountId?:string;wallet:string|null;practice:boolean;paperHeld:number;minHold:number;demoPass:boolean;balance:number;bankroll:number;positions:Position[];fills:Fill[];equity:{t:number;v:number}[];token:string|null;source:'live'|'local';passes:boolean;gateConfigured:boolean};
+type State={cycle?:number;version?:number;accountId?:string;wallet:string|null;practice:boolean;paperHeld:number;minHold:number;demoPass:boolean;balance:number;bankroll:number;positions:Position[];fills:Fill[];equity:{t:number;v:number}[];token:string|null;source:'live'|'local';passes:boolean;gateConfigured:boolean};
 const initial:State={wallet:null,practice:false,paperHeld:0,minHold:50000,demoPass:false,balance:10,bankroll:10,positions:[],fills:[],equity:[],token:null,source:'live',passes:false,gateConfigured:false};
 type Ctx=State&{ready:boolean;busy:boolean;error:string|null;connect():Promise<void>;startPractice():Promise<void>;disconnect():void;setDemoPass(v:boolean):void;trade(t:TradeInput):Promise<Fill|string>;refreshHold():Promise<void>;reset():void;};
 const C=createContext<Ctx|null>(null);const KEY='paperhands.session.v1';

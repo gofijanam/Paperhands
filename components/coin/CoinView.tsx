@@ -35,11 +35,11 @@ export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff
   const [holderRows,setHolderRows]=useState(holders);
   const [traders,setTraders]=useState<PaperTrader[]>([]);
   const [detailError,setDetailError]=useState('');
-  const [detailBusy,setDetailBusy]=useState(false);
+  const [detailBusy,setDetailBusy]=useState(false),[detailRetry,setDetailRetry]=useState(0);
   const [tab, setTab] = useState<(typeof TABS)[number]>("Trades");
   useEffect(()=>{if(tab!=='Holders'&&tab!=='Top traders')return;let active=true,busy=false;
     const load=async()=>{if(busy||document.hidden)return;busy=true;setDetailBusy(true);setDetailError('');try{if(tab==='Holders'){const rows=await api.holders(c.mint);if(active)setHolderRows(rows);}else{const rows=await api.topTraders!(c.mint);if(active)setTraders(rows);}if(active)setDetailError('');}catch(e:any){if(active)setDetailError(e.message);}finally{busy=false;if(active)setDetailBusy(false);}};
-    void load();const id=setInterval(load,30000);return()=>{active=false;clearInterval(id);};},[tab,c.mint,api]);
+    void load();const id=setInterval(load,30000);return()=>{active=false;clearInterval(id);};},[tab,c.mint,api,detailRetry]);
   const [copied, setCopied] = useState(false);
   const p = usePaper();
   const [wide, setWide] = useState<boolean | null>(null);
@@ -106,7 +106,7 @@ export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff
         </header>
 
         {wide===false&&<MarketActivity {...marketDetails}/> }
-        <section aria-label="Chart" className="panel h-[440px] overflow-hidden lg:h-[520px]"><Chart api={api} mint={c.mint} livePrice={c.priceUsd} supply={supply} /></section>
+        <section aria-label="Chart" className="panel h-[440px] overflow-hidden lg:h-[520px]"><Chart api={api} mint={c.mint} livePrice={c.priceUsd} observedAt={c.observedAt} supply={supply} /></section>
 
         {wide === false && (
           <>
@@ -137,8 +137,8 @@ export function CoinView({ initial, trades, holders, source, tapeSource, tapeOff
               <table className="num w-full text-[12px]"><thead className="text-left text-muted"><tr><th className="px-3 py-2 font-normal">Wallet</th><th className="text-right font-normal">Bought SOL</th><th className="text-right font-normal">Sold SOL</th><th className="px-3 text-right font-normal">Buys / Sells</th></tr></thead><tbody>{!activeWallets.length&&<tr><td colSpan={4} className="p-5 text-muted">Waiting for verified wallet addresses in the trade feed.</td></tr>}{activeWallets.map(w=><tr key={w.wallet} className="row border-t border-line/60"><td className="px-3 py-2"><a className="text-soft hover:text-accent" href={`https://solscan.io/account/${w.wallet}`} target="_blank" rel="noreferrer">{short(w.wallet)}</a></td><td className="text-right text-up">{sol(w.boughtSol,3)}</td><td className="text-right text-down">{sol(w.soldSol,3)}</td><td className="px-3 text-right">{w.buys} / {w.sells}</td></tr>)}</tbody></table>
             </>}
             {tab === "Holders" && (
-              <table className="num w-full text-[12px]"><caption className="px-3 py-2 text-left text-[11px] text-muted">{holderRows.some(h=>h.label?.startsWith('RPC'))?'Largest 20 token accounts grouped by owner · Solana RPC · partial distribution':'Holder distribution · GMGN'}</caption><thead className="sticky top-0 bg-panel text-left text-muted"><tr><th className="px-3 py-2 font-normal">#</th><th className="font-normal">Account</th><th className="text-right font-normal">Amount</th><th className="px-3 text-right font-normal">Share</th></tr></thead>
-                <tbody>{!holderRows.length&&<tr><td colSpan={4} className="p-6 text-muted">{detailBusy?'Loading verified holders…':detailError||'No holder distribution returned for this token.'} <a href={`https://solscan.io/token/${c.mint}#holders`} target="_blank" rel="noreferrer" className="text-accent">View on Solscan</a></td></tr>}{holderRows.map((h, i) => (
+              <table className="num w-full text-[12px]"><caption className="px-3 py-2 text-left text-[11px] text-muted">{holderRows.some(h=>h.label?.startsWith('RPC'))?'Largest 20 token accounts grouped by owner · Solana RPC · partial distribution':holderRows.length?'Holder distribution · GMGN':'Holder distribution · on-chain accounts'}</caption><thead className="sticky top-0 bg-panel text-left text-muted"><tr><th className="px-3 py-2 font-normal">#</th><th className="font-normal">Account</th><th className="text-right font-normal">Amount</th><th className="px-3 text-right font-normal">Share</th></tr></thead>
+                <tbody>{!holderRows.length&&<tr><td colSpan={4} className="p-6 text-muted">{detailBusy?'Loading verified holders…':detailError||'No verified holder distribution is available for this token yet.'} <button className="text-accent underline mr-2" onClick={()=>setDetailRetry(x=>x+1)} disabled={detailBusy}>Retry</button><a href={`https://solscan.io/token/${c.mint}#holders`} target="_blank" rel="noreferrer" className="text-accent">View on Solscan</a></td></tr>}{holderRows.map((h, i) => (
                   <tr key={h.owner} className="row border-t border-line/60"><td className="px-3 py-2 text-muted">{i + 1}</td><td className="text-soft"><a href={`https://solscan.io/account/${h.owner}`} target="_blank" rel="noreferrer" className="hover:text-accent">{short(h.owner)}</a>{h.label && <span className="ml-2 rounded bg-panel-3 px-1 text-[11px] text-muted">{h.label}</span>}</td><td className="text-right text-soft">{compact(h.tokens)}</td>
                     <td className="px-3 text-right"><span className="inline-flex items-center gap-2"><span className="bar hidden w-16 sm:block"><i style={{ width: `${Math.min(100, h.pct * 3)}%` }} /></span>{h.pct.toFixed(2)}%</span></td></tr>
                 ))}</tbody></table>

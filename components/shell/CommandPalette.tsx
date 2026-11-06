@@ -47,7 +47,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose(): vo
           {items.map((it, k) => (
             <li key={it.key} role="option" aria-selected={k === i} onMouseEnter={() => setI(k)} onClick={() => go(it)}
               className={`flex cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 ${k === i ? "bg-panel-3" : ""}`}>
-              {it.coin ? <CoinAvatar mint={it.coin.mint} size={28} /> : <span className="grid size-7 place-items-center rounded-md border border-line-2 font-mono text-[11px] text-muted">→</span>}
+              {it.coin ? <CoinAvatar mint={it.coin.mint} imageUrl={it.coin.imageUrl} label={`${it.coin.symbol} logo`} size={32} /> : <span className="grid size-7 place-items-center rounded-md border border-line-2 font-mono text-[11px] text-muted">→</span>}
               <span className="min-w-0 flex-1"><span className="block text-[14px] font-medium">{it.label}</span><span className="block truncate text-[12px] text-muted">{it.sub}</span></span>
               {it.coin && <span className="num text-right text-[12px]"><span className="block text-soft">{usd(it.coin.mcapUsd)}</span><span className={it.coin.change24hPct >= 0 ? "text-up" : "text-down"}>{pct(it.coin.change24hPct)}</span></span>}
             </li>

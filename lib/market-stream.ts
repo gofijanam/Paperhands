@@ -17,8 +17,8 @@ export function subscribeMarket(mint:string,listener:Listener){
    if(dead||document.hidden)return;
    disconnect();clearTimeout(retry);status('connecting');
    const current=new EventSource(`/api/market/stream?mint=${encodeURIComponent(mint)}`);source=current;alive();
-   const receive=(event:string,fn:(data:any)=>void)=>current.addEventListener(event,e=>{if(dead||source!==current)return;try{const data=JSON.parse((e as MessageEvent).data);fn(data);alive();}catch{/* Ignore malformed frames without marking them as healthy. */}});
-   receive('status',j=>{if(j.state==='connected'){attempts=0;status('connected');}else if(j.state==='reconnecting'||j.state==='unavailable'){status('reconnecting');}else if(j.state==='connecting')status('connecting');});
+   const receive=(event:string,fn:(data:any)=>void)=>current.addEventListener(event,e=>{if(dead||source!==current)return;try{const data=JSON.parse((e as MessageEvent).data);fn(data);if(source===current)alive();}catch{/* Ignore malformed frames without marking them as healthy. */}});
+   receive('status',j=>{if(j.state==='connected'){attempts=0;status('connected');}else if(j.state==='reconnecting'||j.state==='unavailable'){status('reconnecting');}else if(j.state==='connecting')status('connecting');else if(j.state==='snapshot'){status('snapshot');disconnect();clearTimeout(retry);}});
    receive('heartbeat',()=>{});
    receive('tick',t=>{if(t.mint!==mint||![t.priceUsd,t.priceSol,t.observedAt].every(Number.isFinite)||t.priceUsd<=0||t.priceSol<=0)return;next.state.lastEvent=Date.now();for(const l of listeners)l.tick?.([t]);status('connected');});
    receive('trade',t=>{if(t.mint===mint)for(const l of listeners)l.trade?.(t);});
