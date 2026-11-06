@@ -1,8 +1,9 @@
-import {decodePumpLogs,PUMP,type EventMarket} from '../pump-events';
+import {decodePumpLogs,PUMP,type EventMarket} from '../pump-events.ts';
 import type {TTrade} from '../api/schema';
 type Listener=(event:string,data:any)=>void;
 type Hub={clients:Set<Listener>;ws:WebSocket|null;state:string;retry:ReturnType<typeof setTimeout>|null;heartbeat:ReturnType<typeof setInterval>|null;closed:boolean;seen:Set<string>;trades:TTrade[];attempt:number;lastMessage:number;};
-const hubs=new Map<string,Hub>();
+const globalStreams=globalThis as typeof globalThis & {paperhandsHubs?:Map<string,Hub>};
+const hubs=globalStreams.paperhandsHubs??=new Map<string,Hub>();
 export function recentStreamTrades(mint:string){return hubs.get(mint)?.trades.slice()||[];}
 /** One upstream connection per viewed mint; all viewers share its verified events. */
 export function sharedHeliusStream(req:Request,c:EventMarket,wsUrl:string){

@@ -45,3 +45,14 @@ Added client stream heartbeat timeout, reconnection status handling, stale-conne
 Official reference reviewed: https://docs.dexscreener.com/api/reference. Public REST covers pool prices, liquidity, volume, buy/sell transaction counts, price changes, FDV, market cap, pool creation, links, boosts and paid promotion metadata. It does not document wallet trade histories, PnL top-trader rankings, complete holders, OHLCV candles or a WebSocket feed. Pair/token endpoints document 300 requests/minute, profile/boost/order endpoints 60, and bulk tokens accepts up to 30 addresses. No new key is required for the documented public endpoints.
 
 Token page adds 5m/1h/6h/24h market activity and a Pools table, using shared ten-second server snapshots with original observation timestamps, explicit delayed state, unknown values preserved and pool-scoped statistics. Boosts are identified as paid promotion. Active wallets is a separate aggregation of the latest displayed real trades, not historical profit ranking. Full wallet addresses survive the public-trade mapping and link to Solscan. Existing theme and paper-order routing remain in place.
+
+
+## Railway migration — 2026-11-06
+
+- Complete source and brand assets copied to gofijanam/Paperhands.
+- Native Node 24 / Next.js server; D1-compatible transactional SQLite adapter on a mounted /data volume. One replica only.
+- One-time private import preserves the preview practice accounts, fills, cycles and hashed sessions. No live customer wallets existed at the migration snapshot.
+- Token-page Top traders now reads only verified Paperhands wallet fills in the current UTC cycle, ranked by realized paper PnL for the selected token. Anonymous practice and external GMGN rankings excluded.
+- Helius stream shared per mint across viewers, with reconnect, slot heartbeat and disconnect cleanup.
+- RPC largest-token-accounts fallback resolves and groups owners; coverage remains the top 20 accounts, never claimed as the complete holder set.
+- GMGN remains paused. PAPER mint, ranked competition and funded reward distribution still require launch configuration.
